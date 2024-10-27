@@ -17,78 +17,12 @@ def exists(val):
     return val is not None
 
 
-# class Bottleneck(nn.Module):
-#     def __init__(self, in_channels, out_channels, reduction=4):
-#         super(Bottleneck, self).__init__()
-#         mid_channels = in_channels // reduction
-#         self.conv1x1 = nn.Conv2d(in_channels, mid_channels, kernel_size=1, bias=False)
-#         self.relu = nn.ReLU(inplace=True)
-#         self.conv3x3 = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False)
-
-#     def forward(self, x):
-#         return self.conv3x3(self.relu(self.conv1x1(x)))
-    
 
 def make_layer(block, n_layers):
     layers = []
     for _ in range(n_layers):
         layers.append(block())
     return nn.Sequential(*layers)
-
-
-# class ResidualDenseBlock_5C(nn.Module):
-#     def __init__(self, nf=64, gc=32, attn_dim=32, bias=True):
-#         super(ResidualDenseBlock_5C, self).__init__()
-#         self.gc = gc
-#         self.nf = nf
-#         self.bottleneck1 = Bottleneck(nf, gc)
-#         self.bottleneck2 = Bottleneck(nf + gc, gc)
-#         self.bottleneck3 = Bottleneck(nf + 2 * gc, gc)
-#         self.bottleneck4 = Bottleneck(nf + 3 * gc, gc)
-#         self.bottleneck5 = nn.Sequential(
-#             nn.Conv2d(4 * gc, 4 * gc, kernel_size=1),
-#             nn.ReLU(),
-#             nn.Conv2d(4 * gc, 2 * gc, kernel_size=3, padding=1)
-#         )
-#         self.final_conv = nn.Conv2d(nf , nf, kernel_size=3, padding=1, bias=bias)
-#         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-
-#         # Initialize MultiheadAttention with correct embed_dim
-#         self.attn = nn.MultiheadAttention(embed_dim=gc, num_heads=8, dropout=0.1)
-
-#     def forward(self, x):
-#         x1 = self.bottleneck1(x)
-#         x2 = self.bottleneck2(torch.cat((x, x1), 1))
-#         x3 = self.bottleneck3(torch.cat((x, x1, x2), 1))
-#         x4 = self.bottleneck4(torch.cat((x, x1, x2, x3), 1))
-#         x_cat = self.bottleneck5(torch.cat((x1, x2, x3, x4), 1))
-        
-#         b, c, h, w = x_cat.shape
-#         # print(f"Shape before rearrange: {x_cat.shape}")
-#         # print(f"gc: {self.gc}")
-
-#         # Calculate the expected number of channels after rearrange
-#         n = 2  # number of concatenated inputs in x_cat
-#         new_c = c // n
-#         # print(f"new_c: {new_c}")
-
-#         # Ensure correct rearrangement
-#         # Use the appropriate pattern to match the target shape for MultiheadAttention
-#         x_cat = rearrange(x_cat, 'b (n c) h w -> (b h w) n c', n=n, c=new_c, h=h, w=w)
-#         x_cat = x_cat.permute(1, 0, 2)  # (n, b*h*w, c) -> (n, b*h*w, c)
-        
-#         # Ensure the embed_dim matches gc
-#         assert self.attn.embed_dim == self.gc, f"Expected embed_dim={self.gc}, but got {self.attn.embed_dim}."
-
-#         x_attn, _ = self.attn(x_cat, x_cat, x_cat)  # Self-attention
-#         x_attn = x_attn.permute(1, 0, 2).reshape(b, c, h, w)  # Reshape back
-#         # print(x_attn.shape)   torch.Size([4, 64, 64, 64])
-#         # print(self.gc) 32
-#         # print(self.nf)  64
-#         x5 = self.final_conv(x_attn)
-#         return x5 * 0.2 + x
-
-
 
 
 class ResidualDenseBlock_5C(nn.Module):
@@ -163,8 +97,8 @@ class RRDBNet(nn.Module):
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
 
         self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
-        self.RRDB_trunk = make_layer(RRDB_block_f, nb)#残差密集块
-        self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)#RRDB块序列之后的卷积层，用于进一步处理特征。
+        self.RRDB_trunk = make_layer(RRDB_block_f, nb)#
+        self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)#
         self.upconv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         self.upconv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
@@ -174,16 +108,10 @@ class RRDBNet(nn.Module):
 
     def forward(self, x):
         print(f'Input to RRDBNet: {x.shape}')  # Debugging line torch.Size([4, 3, 64, 64])
-        fea = self.conv_first(x)
-        # print(f'After conv_first: {fea.shape}')  # Debugging line torch.Size([4, 64, 64, 64])
-        
+        fea = self.conv_first(x)       
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
-        # print(f'After RRDB_trunk: {trunk.shape}')  # Debugging line  torch.Size([4, 64, 64, 64])
         
         fea = fea + trunk
-        # print(f'After trunk addition: {fea.shape}')  # Debugging line  torch.Size([4, 64, 64, 64])
-        # aa = F.interpolate(fea, scale_factor=2, mode='nearest') 
-        # print(f'After upconv1: {aa.shape}')  # Debugging line torch.Size([4, 64, 128, 128])
         fea = self.lrelu(self.upconv1(F.interpolate(fea, scale_factor=2, mode='nearest')))
         # print(f'After upconv1: {fea.shape}')  # Debugging line torch.Size([4, 64, 128, 128])
         

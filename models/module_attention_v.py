@@ -314,31 +314,7 @@ class CrossAttention(nn.Module):
         # print(f'Final Output shape: {out.shape}')  torch.Size([4, 256, 64])
 
         return out
-    
-    # def forward(self, x, context=None, mask=None):
-    #     h = self.heads
 
-    #     q = self.to_q(x)
-    #     context = default(context, x)
-    #     k = self.to_k(context)
-    #     v = self.to_v(context)
-
-    #     q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
-
-    #     sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
-
-    #     if exists(mask):
-    #         mask = rearrange(mask, 'b ... -> b (...)')
-    #         max_neg_value = -torch.finfo(sim.dtype).max
-    #         mask = repeat(mask, 'b j -> (b h) () j', h=h)
-    #         sim.masked_fill_(~mask, max_neg_value)
-
-    #     # attention, what we cannot get enough of
-    #     attn = sim.softmax(dim=-1)
-
-    #     out = einsum('b i j, b j d -> b i d', attn, v)
-    #     out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
-    #     return self.to_out(out)
 from einops.layers.torch import Rearrange
 class AttentionPool(nn.Module):
     def __init__(self, input_dim, pool_size = 2):
@@ -361,55 +337,6 @@ class AttentionPool(nn.Module):
 
         attn = logits.softmax(dim = -1)
         return (x * attn).sum(dim = -1)
-
-class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=False):
-        super().__init__()
-        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
-        self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
-        self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
-                                    heads=n_heads, dim_head=d_head, dropout=dropout)  # is self-attn if context is none
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        self.norm3 = nn.LayerNorm(dim)
-        self.checkpoint = checkpoint
-
-    def forward(self, x, context=None):
-        return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
-
-    def _forward(self, x, context=None):
-        # x = self.attn1(self.norm1(x)) + x
-        # x = self.attn2(self.norm2(x), context=context) + x
-        # x = self.ff(self.norm3(x)) + x
-        x = self.attn1(self.norm1(x))
-        x = self.attn2(self.norm2(x), context=context)
-        x = self.ff(self.norm3(x))
-        return x
-
-class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=False):
-        super().__init__()
-        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
-        self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
-        self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
-                                    heads=n_heads, dim_head=d_head, dropout=dropout)  # is self-attn if context is none
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        self.norm3 = nn.LayerNorm(dim)
-        self.checkpoint = checkpoint
-
-    def forward(self, x, context=None):
-        return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
-
-    def _forward(self, x, context=None):
-        # x = self.attn1(self.norm1(x)) + x
-        # x = self.attn2(self.norm2(x), context=context) + x
-        # x = self.ff(self.norm3(x)) + x
-        x = self.attn1(self.norm1(x))
-        x = self.attn2(self.norm2(x), context=context)
-        x = self.ff(self.norm3(x))
-        return x
-
 
 
    
@@ -475,22 +402,13 @@ class GradualTransition_512(nn.Module):
         
         self.conv4 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, bias=False)
         self.bn4 = nn.BatchNorm2d(out_channels)       
-    def forward(self, x):
-        # print(f"Input shape: {x.shape}")
-        
-     
-        
+    def forward(self, x):  
         out = self.conv2(x)
-        # print(f"After Conv2 (1x1): {out.shape}")
         out = self.bn2(out)
-        # print(f"After BatchNorm2: {out.shape}")
         out = self.relu2(out)
-        # print(f"After ReLU2: {out.shape}")
         
         out = self.conv3(out)
-        # print(f"After Conv3 (1x1): {out.shape}")
         out = self.bn3(out)
-        # print(f"After BatchNorm3: {out.shape}")
 
         out_sk = self.conv4(x)
         out_sk = self.bn3(out_sk)
@@ -499,91 +417,6 @@ class GradualTransition_512(nn.Module):
 
         return out
 
-
-
-# class ModifiedSpatialTransformer(nn.Module):
-#     """
-#     Transformer block for image-like data.
-#     First, project the input (aka embedding)
-#     and reshape to b, t, d.
-#     Then apply standard transformer action.
-#     Finally, reshape to image
-#     """
-#     def __init__(self, in_channels, n_heads, d_head,
-#                  depth=1, dropout=0., context_dim=1024, up_factor=2, is_last=False):
-#         super().__init__()
-#         self.in_channels = in_channels
-#         inner_dim = n_heads * d_head
-#         self.norm = Normalize(in_channels)
-
-
-#         self.proj_in = nn.Conv2d(in_channels,
-#                                  inner_dim,
-#                                  kernel_size=1,
-#                                  stride=1,
-#                                  padding=0)
-#         self.proj_context = nn.Conv2d(context_dim,
-#                                  inner_dim,
-#                                  kernel_size=1,
-#                                  stride=1,
-#                                  padding=0)
-
-#         self.transformer_blocks = nn.ModuleList(
-#             [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=inner_dim)
-#                 for d in range(depth)]
-#         )
-
-
-#         self.proj_out = zero_module(nn.Conv2d(inner_dim,
-#                                               in_channels,
-#                                               kernel_size=1,
-#                                               stride=1,
-#                                               padding=0))
-#         up_channels = int(in_channels / up_factor / up_factor)
-#         if not is_last:
-#             self.conv_out = nn.Conv2d(up_channels, up_channels, 3, 1, 1)
-#         else:
-#             self.conv_out = nn.Conv2d(up_channels, up_channels, 4, 1, 1)
-#         self.up_factor = up_factor
-
-
-#     def forward(self, x, context=None):
-#         # note: if no context is given, cross-attention defaults to self-attention
-#         b, c, h, w = x.shape
-#         # print(f'Input shape: {x.shape}') torch.Size([4, 1024, 16, 16])
-        
-#         x = self.norm(x)
-#         # print(f'After normalization: {x.shape}') torch.Size([4, 1024, 16, 16])
-        
-#         x = self.proj_in(x)
-#         # print(f'After proj_in: {x.shape}')  torch.Size([4, 64, 16, 16])
-        
-#         context = self.proj_context(context)
-#         # print(f'Context after proj_context: {context.shape}')  torch.Size([4, 64, 64, 64])
-        
-#         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
-#         # print(f'After rearrange x: {x.shape}')  torch.Size([4, 256, 64])
-        
-#         context = rearrange(context, 'b c h w -> b (h w) c').contiguous()
-#         # print(f'After rearrange context: {context.shape}')  torch.Size([4, 4096, 64])
-        
-#         for block in self.transformer_blocks:
-#             x = block(x, context=context)
-#             # print(f'After transformer block: {x.shape}') torch.Size([4, 256, 64])
-        
-#         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
-#         # print(f'After rearrange x back to image: {x.shape}')  torch.Size([4, 64, 16, 16])
-        
-#         x = self.proj_out(x)
-#         # print(f'After proj_out: {x.shape}')  torch.Size([4, 1024, 16, 16])
-        
-#         x = rearrange(x, 'b (c uw uh) h w -> b c (h uh) (w uw)', uh=self.up_factor, uw=self.up_factor).contiguous()
-#         # print(f'After final rearrange: {x.shape}') torch.Size([4, 64, 64, 64])
-        
-#         x = self.conv_out(x)
-#         # print(f'After conv_out: {x.shape}') torch.Size([4, 64, 64, 64])
-        
-#         return x
     
 
 class ModifiedSpatialTransformer(nn.Module):
@@ -603,11 +436,6 @@ class ModifiedSpatialTransformer(nn.Module):
         # new
         self.inverted_residual_in = GradualTransition(1024, 512, 128, 64)
         
-        # self.proj_in = nn.Conv2d(in_channels,
-        #                          inner_dim,
-        #                          kernel_size=1,
-        #                          stride=1,
-        #                          padding=0)
         self.proj_context = nn.Conv2d(context_dim,
                                  inner_dim,
                                  kernel_size=1,
@@ -615,18 +443,8 @@ class ModifiedSpatialTransformer(nn.Module):
                                  padding=0)
         self.proj_context_ = GradualTransition_512(512, 128, 64)
 
-        # self.transformer_blocks = nn.ModuleList(
-        #     [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=inner_dim)
-        #         for d in range(depth)]
-        # )
-        # new
         self.inverted_residual_out = GradualTransition(64, 256, 512, 1024)
 
-        # self.proj_out = zero_module(nn.Conv2d(inner_dim,
-        #                                       in_channels,
-        #                                       kernel_size=1,
-        #                                       stride=1,
-        #                                       padding=0))
         up_channels = int(in_channels / up_factor / up_factor)
         if not is_last:
             self.conv_out = nn.Conv2d(up_channels, up_channels, 3, 1, 1)
@@ -639,160 +457,29 @@ class ModifiedSpatialTransformer(nn.Module):
 
     def forward(self, x, context=None):
         
-        # note: if no context is given, cross-attention defaults to self-attention
         b, c, h, w = x.shape
-        # print(f'Input shape: {x.shape}') torch.Size([4, 1024, 16, 16])
-        # print(f'Input shape: {x.shape}') 
         x = self.norm(x)
-        # print(f'After normalization: {x.shape}') torch.Size([4, 1024, 16, 16])
         x = self.inverted_residual_in(x)
-        # print(f'After inverted_residual_in: {x.shape}') torch.Size([4, 64, 16, 16])
         x = self.mamba1(x)
-        # x = self.proj_in(x)
-        # print(f'After proj_in: {x.shape}')  torch.Size([4, 64, 16, 16])
-        # print(f'After proj_in: {x.shape}') 
-        # print(f'Context : {context.shape}')
         if c== 512:
             context = self.proj_context_(context)
         else:
             context = self.proj_context(context)
         context = self.mamba1(context)
-        # print(f'Context after proj_context: {context.shape}')  torch.Size([4, 64, 64, 64])
-        # print(f'Context after proj_context: {context.shape}')
         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
-        # print(f'After rearrange x: {x.shape}')  #torch.Size([4, 256, 64])
         
         context = rearrange(context, 'b c h w -> b (h w) c').contiguous()
-        # print(f'After rearrange context: {context.shape}') # torch.Size([4, 4096, 64])
-        
-        # for block in self.transformer_blocks:
-        #     x = block(x, context=context)
-        #     print(f'After transformer block: {x.shape}') #torch.Size([4, 256, 64])
         x = feature_fusion(x,context)
         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
-        # print(f'After rearrange x back to image: {x.shape}')  torch.Size([4, 64, 16, 16])
-        # print(f'After rearrange x back to image: {x.shape}') 
         x = self.inverted_residual_out(x)
         x = self.mamba2(x)
-        # x = self.proj_out(x)
-        # print(f'After proj_out: {x.shape}') 
-        # print(f'After proj_out: {x.shape}')  torch.Size([4, 1024, 16, 16])
         
         x = rearrange(x, 'b (c uw uh) h w -> b c (h uh) (w uw)', uh=self.up_factor, uw=self.up_factor).contiguous()
-        # print(f'After final rearrange: {x.shape}') torch.Size([4, 64, 64, 64])
         
         x = self.conv_out(x)
-        # x = self.mamba1(x)
-        # print(f'After conv_out: {x.shape}') torch.Size([4, 64, 64, 64])
         
         return x
 
-
-
-class CausalPrefixAttention(nn.Module):
-    def __init__(
-        self,
-        *,
-        dim,
-        dim_head=64,
-        heads=8,
-        max_heads_process=2,
-        dropout=0.0,
-        cross_attn_dropout=0.0
-    ):
-        super().__init__()
-        self.scale = dim_head**-0.5
-        self.heads = heads
-        self.max_heads_process = max_heads_process
-
-        inner_dim = heads * dim_head
-
-        self.norm = nn.LayerNorm(dim)
-        self.context_norm = nn.LayerNorm(dim)
-        self.dropout = nn.Dropout(dropout)
-
-        self.cross_attn_dropout = cross_attn_dropout  # they drop out a percentage of the prefix during training, shown to help prevent overfitting
-
-        self.to_q = nn.Linear(dim, inner_dim, bias=False)
-        self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
-        self.to_out = nn.Linear(inner_dim, dim)
-
-    def forward(self, x, context, context_mask=None):
-        batch, context_len, device = x.shape[0], context.shape[-2], x.device
-
-        # take care of cross attention dropout
-        if self.training and self.cross_attn_dropout > 0.0:
-            rand = torch.zeros((batch, context_len), device=device).uniform_()
-            keep_context_len = context_len - int(context_len * self.cross_attn_dropout)
-            keep_indices = rand.topk(keep_context_len, dim=-1).indices
-            keep_mask = torch.zeros_like(rand).scatter_(1, keep_indices, 1).bool()
-
-            context = rearrange(context[keep_mask], "(b n) d -> b n d", b=batch)
-
-            if exists(context_mask):
-                context_mask = rearrange(
-                    context_mask[keep_mask], "(b n) -> b n", b=batch
-                )
-
-        # normalization
-        x = self.norm(x)
-        context = self.context_norm(context)
-
-        # derive queries, keys, values
-        q = self.to_q(x)
-
-        k_input, v_input = self.to_kv(x).chunk(2, dim=-1)
-        k_context, v_context = self.to_kv(context).chunk(2, dim=-1)
-
-        k = torch.cat((k_context, k_input), dim=1)
-        v = torch.cat((v_context, v_input), dim=1)
-
-        q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), (q, k, v)
-        )
-        q = q * self.scale
-
-        # take care of masking
-        i, j = q.shape[-2], k.shape[-2]
-        mask_value = -torch.finfo(q.dtype).max
-
-        if exists(context_mask):
-            mask_len = context_mask.shape[-1]
-            context_mask = F.pad(context_mask, (0, max(j - mask_len, 0)), value=True)
-            context_mask = rearrange(context_mask, "b j -> b 1 1 j")
-
-        causal_mask = torch.ones((i, j), device=x.device, dtype=torch.bool).triu(
-            j - i + 1
-        )
-
-        # process in chunks of heads
-        out = []
-        max_heads = self.max_heads_process
-        for q_chunk, k_chunk, v_chunk in zip(
-            q.split(max_heads, dim=1),
-            k.split(max_heads, dim=1),
-            v.split(max_heads, dim=1),
-        ):
-            sim = einsum("b h i d, b h j d -> b h i j", q_chunk, k_chunk)
-
-            if exists(context_mask):
-                sim = sim.masked_fill(~context_mask, mask_value)
-
-            sim = sim.masked_fill(causal_mask, mask_value)
-
-            attn = sim.softmax(dim=-1)
-            attn = self.dropout(attn)
-
-            out_chunk = einsum("b h i j, b h j d -> b h i d", attn, v_chunk)
-            out.append(out_chunk)
-
-        # concat all the heads together
-        out = torch.cat(out, dim=1)
-
-        # merge heads and then combine with linear
-        out = rearrange(out, "b h n d -> b n (h d)")
-
-        return self.to_out(out)
     
     
 if __name__ == '__main__':

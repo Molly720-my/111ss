@@ -20,8 +20,8 @@ import torch.nn.functional as F
 lpips_model = lpips.LPIPS(net='alex').to('cuda')
 def parse_args():
     parser = argparse.ArgumentParser(description='Testing')
-    parser.add_argument('--opt', type=str, default='/home/yzbj10/dataDisk/rzx/SeD-main/options/test_rrdb_P+SeD1.yml',help='path to option file', required=False)
-    parser.add_argument('--output_path', type=str, default='/home/yzbj10/dataDisk/rzx/SeD-main/dingxingshiyan/140000urban100',help='path to your output', required=False)
+    parser.add_argument('--opt', type=str, default='options/test_rrdb_P+MSF.yml',help='path to option file', required=False)
+    parser.add_argument('--output_path', type=str, default='output',help='path to your output', required=False)
     args = parser.parse_args()
     return args
 
@@ -41,8 +41,6 @@ def main():
     ckpt_path = opt['ckpt_path']
 
     weight = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-    # weight = weight['model']
-
     # Models
     if opt['model_type'].lower() == 'rrdb':
         model = model_rrdb.RRDBNet(**opt['model']['rrdb']).to('cuda')

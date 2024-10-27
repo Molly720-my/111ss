@@ -6,7 +6,6 @@ import functools
 import math
 import clip
 from clip.model import ModifiedResNet
-# from .module_attention import ModifiedSpatialTransformer
 from .module_attention_v import ModifiedSpatialTransformer
 from models.sam2.build_sam import build_sam2
 class BasicConv2d(nn.Module):
@@ -82,27 +81,6 @@ class Adapter(nn.Module):
 
 model_cfg = "sam2_hiera_l.yaml"
 
-# model = build_sam2(model_cfg)
-# del model.sam_mask_decoder
-# del model.sam_prompt_encoder
-# del model.memory_encoder
-# del model.memory_attention
-# del model.mask_downsample
-# del model.obj_ptr_tpos_proj
-# del model.obj_ptr_proj
-# del model.image_encoder.neck
-# encoder = model.image_encoder.trunk
-
-# for param in encoder.parameters():
-#     param.requires_grad = False
-# blocks = []
-# for block in encoder.blocks:
-#     blocks.append(
-#         Adapter(block)
-#     )
-# encoder.blocks = nn.Sequential(
-#     *blocks
-# )
 
 
 class SAM2UNet(nn.Module):
@@ -148,122 +126,6 @@ class SAM2UNet(nn.Module):
 
 
 
-# 语义特征生成
-class CLIP_Semantic_extractor(ModifiedResNet):
-    def __init__(self, layers=(3, 4, 6, 3), pretrained=True, path=None, output_dim=1024, heads=32):
-        super(CLIP_Semantic_extractor, self).__init__(layers=layers, output_dim=output_dim, heads=heads)
-
-        ckpt = 'RN50' if path is None else path
-
-        if pretrained:
-            model, _ = clip.load(ckpt, device='cpu')
-        
-        self.load_state_dict(model.visual.state_dict())
-        self.register_buffer(
-            'mean',
-            torch.Tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
-        )
-        self.register_buffer(
-            'std',
-            torch.Tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
-        )
-        self.requires_grad_(False)
-
-        del model
-
-    def forward(self, x):
-        
-        def stem(x):
-            x = self.relu1(self.bn1(self.conv1(x)))
-            # print("x2-1:",x.shape)  torch.Size([4, 32, 128, 128])
-            x = self.relu2(self.bn2(self.conv2(x)))
-            # print("x2-2:",x.shape)  torch.Size([4, 32, 128, 128])
-            x = self.relu3(self.bn3(self.conv3(x)))
-            # print("x2-3:",x.shape)  torch.Size([4, 64, 128, 128])
-            x = self.avgpool(x)
-            # print("x2-4:",x.shape)  torch.Size([4, 64, 64, 64])
-            return x
-        # print("x:",x.shape) torch.Size([4, 3, 256, 256])
-        x = (x - self.mean) / self.std
-        # print("x1:",x.shape)  torch.Size([4, 3, 256, 256])
-        x = x.type(self.conv1.weight.dtype)
-        # print("x2:",x.shape) x2: torch.Size([4, 3, 256, 256])
-        x = stem(x)
-        # print("x3:",x.shape) torch.Size([4, 64, 64, 64])
-        x = self.layer1(x)
-        # print("x4:",x.shape)  torch.Size([4, 256, 64, 64])
-        x = self.layer2(x)
-        # print("x5:",x.shape)  torch.Size([4, 512, 32, 32])
-        x = self.layer3(x)
-        # print("semantic:",x.shape) torch.Size([4, 1024, 16, 16])
-        return x
-
-# 判别器
-# class SeD_P(nn.Module):
-#     def __init__(self, input_nc, ndf=64, semantic_dim=1024, semantic_size=16, use_bias=True, nheads=1, dhead=64):
-#         """Construct a PatchGAN discriminator
-#         Parameters:
-#             input_nc (int)  -- the number of channels in input images
-#             ndf (int)       -- the number of filters in the last conv layer
-#             n_layers (int)  -- the number of conv layers in the discriminator
-#             norm_layer      -- normalization layer
-#         """
-#         super().__init__()
-
-#         kw = 4
-#         padw = 1        
-#         # ss = [128, 64, 32, 31, 30]  # PatchGAN's spatial size
-#         # cs = [64, 128, 256, 512, 1]  # PatchGAN's channel size
-
-#         norm = spectral_norm
-
-#         self.lrelu = nn.LeakyReLU(0.2, True)
-#         self.conv_first = nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw)
-
-#         self.conv1 = norm(nn.Conv2d(ndf * 1, ndf * 2, kernel_size=kw, stride=2, padding=padw, bias=use_bias))
-#         upscale = math.ceil(64 / semantic_size)
-#         self.att1 = ModifiedSpatialTransformer(in_channels=semantic_dim, n_heads=nheads, d_head=dhead, context_dim=128, up_factor=upscale)
-        
-#         ex_ndf = int(semantic_dim / upscale**2)
-#         self.conv11 = norm(nn.Conv2d(ndf * 2 + ex_ndf, ndf * 2, kernel_size=3, stride=1, padding=padw, bias=use_bias))
-        
-#         self.conv2 = norm(nn.Conv2d(ndf * 2, ndf * 4, kernel_size=kw, stride=2, padding=padw, bias=use_bias))
-#         upscale = math.ceil(32 / semantic_size)
-#         self.att2 = ModifiedSpatialTransformer(in_channels=semantic_dim, n_heads=nheads, d_head=dhead, context_dim=256, up_factor=upscale)
-        
-#         ex_ndf = int(semantic_dim / upscale**2)
-#         self.conv21 = norm(nn.Conv2d(ndf * 4 + ex_ndf, ndf * 4, kernel_size=3, stride=1, padding=padw, bias=use_bias))
-        
-#         self.conv3 = norm(nn.Conv2d(ndf * 4, ndf * 8, kernel_size=kw, stride=1, padding=padw, bias=use_bias))
-#         upscale = math.ceil(31 / semantic_size)
-#         self.att3 = ModifiedSpatialTransformer(in_channels=semantic_dim, n_heads=nheads, d_head=dhead, context_dim=512, up_factor=upscale, is_last=True)
-        
-#         ex_ndf = int(semantic_dim / upscale**2)
-#         self.conv31 = norm(nn.Conv2d(ndf * 8 + ex_ndf, ndf * 8, kernel_size=3, stride=1, padding=padw, bias=use_bias))
-        
-#         self.conv_last = nn.Conv2d(ndf * 8, 1, kernel_size=kw, stride=1, padding=padw)
-        
-#         init_weights(self, init_type='normal')
-
-#     def forward(self, input, semantic):
-#         """Standard forward."""
-#         input = self.conv_first(input)
-#         input = self.lrelu(input)
-        
-#         input = self.conv1(input)
-#         se = self.att1(semantic, input)
-#         input = self.lrelu(self.conv11(torch.cat([input, se], dim=1)))
-        
-#         input = self.conv2(input)
-#         se = self.att2(semantic, input)
-#         input = self.lrelu(self.conv21(torch.cat([input, se], dim=1)))
-        
-#         input = self.conv3(input)
-#         se = self.att3(semantic, input)
-#         input = self.lrelu(self.conv31(torch.cat([input, se], dim=1)))
-            
-#         input = self.conv_last(input)
-#         return input
 
 
 class UNetDiscriminatorSN(nn.Module):
@@ -371,37 +233,33 @@ class SeD_P(nn.Module):
         # print("semantic:",semantic.shape)
         input = self.conv_first(input)
         input = self.lrelu(input)
-        # print("After conv_first:", input.shape)  torch.Size([4, 64, 128, 128])
-        # print(semantic.shape)
+
         input = self.conv1(input)
-        # print("After conv1:", input.shape) torch.Size([4, 128, 64, 64])
-        # print(semantic.shape) torch.Size([4, 1024, 16, 16])
+
 
         
         se = self.att1(semantic, input)
         # print("se1:",se.shape)
         input = self.lrelu(self.conv11(torch.cat([input, se], dim=1)))
-        # print("After conv11:", input.shape)  torch.Size([4, 128, 64, 64])
+
         
         input = self.conv2(input)
-        # print("After conv2:", input.shape)  torch.Size([4, 256, 32, 32])
-        
+
         se = self.att2(semantic, input)
         # print("se2:",se.shape)
         input = self.lrelu(self.conv21(torch.cat([input, se], dim=1)))
-        # print("After conv21:", input.shape)  torch.Size([4, 256, 32, 32])
+
         
         input = self.conv3(input)
-        # print("After conv3:", input.shape)  torch.Size([4, 512, 31, 31])
+
         
         se = self.att3(semantic, input)
         # print("se3:",se.shape)
         input = self.lrelu(self.conv31(torch.cat([input, se], dim=1)))
-        # print("After conv31:", input.shape)  torch.Size([4, 512, 31, 31])
+
             
         input = self.conv_last(input)
-        # print("After conv_last:", input.shape) torch.Size([4, 1, 30, 30])
-        
+
         return input
 
     
